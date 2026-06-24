@@ -153,8 +153,9 @@ API_PORT=3001
 API_HOST=0.0.0.0
 CORS_ORIGIN=http://localhost:3000
 
-# Web
-NEXT_PUBLIC_API_URL=http://localhost:3001
+# Web -- empty so browser uses relative /api/* URLs proxied by Next.js
+NEXT_PUBLIC_API_URL=
+INTERNAL_API_URL=http://localhost:3001
 
 # Paths
 NGINX_SITES_DIR=${NGINX_SITES_DIR}
@@ -225,6 +226,17 @@ info "Building panel..."
 pnpm build
 
 success "Panel built."
+
+# ── Copy static assets into standalone ────────────────────────────
+# Next.js standalone does not bundle static files automatically
+STANDALONE_DIR="$INSTALL_DIR/apps/web/.next/standalone/apps/web"
+if [[ -d "$STANDALONE_DIR" ]]; then
+  cp -r "$INSTALL_DIR/apps/web/.next/static" "$STANDALONE_DIR/.next/static"
+  [[ -d "$INSTALL_DIR/apps/web/public" ]] && cp -r "$INSTALL_DIR/apps/web/public" "$STANDALONE_DIR/public" || true
+  success "Static assets copied to standalone."
+else
+  warn "Standalone directory not found -- skipping static asset copy."
+fi
 
 # ── Systemd services ──────────────────────────────────────────────
 info "Installing systemd services..."
