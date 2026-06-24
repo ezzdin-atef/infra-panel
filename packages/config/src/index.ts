@@ -22,7 +22,7 @@ export function parseEnv(env: NodeJS.ProcessEnv = process.env): Env {
     console.error(result.error.flatten().fieldErrors)
     process.exit(1)
   }
-  return result.data
+  return result.data as Env
 }
 
 export const env = parseEnv()
