@@ -1,3 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+onlyBuiltDependencies:
+  - cpu-features
+  - esbuild
+  - msgpackr-extract
+  - protobufjs
+  - sharp
+  - ssh2

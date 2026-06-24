@@ -24,15 +24,5 @@
   "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=20"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "cpu-features",
-      "esbuild",
-      "msgpackr-extract",
-      "protobufjs",
-      "sharp",
-      "ssh2"
-    ]
   }
 }
