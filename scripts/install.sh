@@ -224,34 +224,6 @@ pnpm build
 
 success "Panel built."
 
-# ── Start database containers ─────────────────────────────────────
-info "Starting PostgreSQL and Redis containers..."
-docker compose --env-file "$ENV_FILE" up postgres redis -d
-
-info "Waiting for PostgreSQL to be healthy..."
-for i in $(seq 1 30); do
-  if docker compose ps postgres 2>/dev/null | grep -q "healthy"; then
-    success "PostgreSQL is healthy."
-    break
-  fi
-  if [[ $i -eq 30 ]]; then
-    error "PostgreSQL did not become healthy in time. Check: docker compose logs postgres"
-  fi
-  sleep 2
-done
-
-# ── Run database migrations ───────────────────────────────────────
-info "Generating and applying database migrations..."
-# Load env so drizzle-kit can reach the DB
-set -a; source "$ENV_FILE"; set +a
-
-cd "$INSTALL_DIR/packages/database"
-pnpm db:generate
-pnpm db:migrate
-cd "$INSTALL_DIR"
-
-success "Database migrations applied."
-
 # ── Systemd services ──────────────────────────────────────────────
 info "Installing systemd services..."
 
@@ -295,8 +267,45 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable infra-panel-api infra-panel-web
+success "Systemd services installed."
+
+# ── Start database containers ─────────────────────────────────────
+info "Starting PostgreSQL and Redis containers..."
+
+# Tear down any previous infra-panel containers to free bound ports
+cd "$INSTALL_DIR"
+docker compose --env-file "$ENV_FILE" down 2>/dev/null || true
+docker compose --env-file "$ENV_FILE" up postgres redis -d
+
+info "Waiting for PostgreSQL to be healthy..."
+PG_READY=false
+for i in $(seq 1 30); do
+  if docker compose ps postgres 2>/dev/null | grep -q "healthy"; then
+    PG_READY=true
+    success "PostgreSQL is healthy."
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$PG_READY" != "true" ]]; then
+  warn "PostgreSQL did not become healthy in time."
+  warn "Fix with: docker compose logs postgres"
+  warn "Then run: cd $INSTALL_DIR && pnpm db:generate && pnpm db:migrate"
+else
+  # ── Run database migrations ───────────────────────────────────────
+  info "Generating and applying database migrations..."
+  set -a; source "$ENV_FILE"; set +a
+  cd "$INSTALL_DIR/packages/database"
+  pnpm db:generate
+  pnpm db:migrate
+  cd "$INSTALL_DIR"
+  success "Database migrations applied."
+fi
+
+# ── Start panel services ──────────────────────────────────────────
 systemctl start infra-panel-api infra-panel-web
-success "Systemd services installed and started."
+success "Panel services started."
 
 # ── Verification ──────────────────────────────────────────────────
 info "Verifying services..."
