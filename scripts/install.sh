@@ -318,6 +318,9 @@ else
 fi
 
 # ── Start panel services ──────────────────────────────────────────
+# Free ports in case a previous instance or Docker container is still bound
+fuser -k 3000/tcp 2>/dev/null || true
+fuser -k 3001/tcp 2>/dev/null || true
 systemctl start infra-panel-api infra-panel-web
 success "Panel services started."
 
