@@ -2,10 +2,22 @@
   "name": "@repo/shared",
   "version": "0.0.0",
   "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
   "exports": {
-    ".": "./src/index.ts",
-    "./crypto": "./src/crypto.ts",
-    "./jwt": "./src/jwt.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./crypto": {
+      "types": "./src/crypto.ts",
+      "default": "./dist/crypto.js"
+    },
+    "./jwt": {
+      "types": "./src/jwt.ts",
+      "default": "./dist/jwt.js"
+    }
   },
   "dependencies": {
     "@repo/types": "workspace:*",
