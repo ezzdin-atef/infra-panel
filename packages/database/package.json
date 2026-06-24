@@ -19,6 +19,7 @@
   "devDependencies": {
     "@repo/config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "dotenv": "^16",
     "drizzle-kit": "^0.28",
     "typescript": "^5"
   }
