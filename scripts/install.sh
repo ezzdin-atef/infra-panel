@@ -272,9 +272,20 @@ success "Systemd services installed."
 # ── Start database containers ─────────────────────────────────────
 info "Starting PostgreSQL and Redis containers..."
 
-# Tear down any previous infra-panel containers to free bound ports
+# Tear down any previous infra-panel containers
 cd "$INSTALL_DIR"
 docker compose --env-file "$ENV_FILE" down 2>/dev/null || true
+
+# Stop any native services that may be holding ports 5432 / 6379
+for svc in redis redis-server redis-sentinel postgresql postgresql-* pg_ctlcluster; do
+  systemctl stop "$svc" 2>/dev/null || true
+  systemctl disable "$svc" 2>/dev/null || true
+done
+# Last resort: kill anything still bound to those ports
+fuser -k 5432/tcp 2>/dev/null || true
+fuser -k 6379/tcp 2>/dev/null || true
+sleep 1
+
 docker compose --env-file "$ENV_FILE" up postgres redis -d
 
 info "Waiting for PostgreSQL to be healthy..."
