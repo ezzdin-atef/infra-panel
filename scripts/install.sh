@@ -93,11 +93,13 @@ if ! command -v ufw &>/dev/null; then
   apt-get install -y -qq ufw
 fi
 
-ufw allow 22/tcp  2>/dev/null || true
-ufw allow 80/tcp  2>/dev/null || true
-ufw allow 443/tcp 2>/dev/null || true
+ufw allow 22/tcp   2>/dev/null || true
+ufw allow 80/tcp   2>/dev/null || true
+ufw allow 443/tcp  2>/dev/null || true
+ufw allow 3000/tcp 2>/dev/null || true
+ufw allow 3001/tcp 2>/dev/null || true
 ufw --force enable 2>/dev/null || true
-success "UFW configured (SSH, HTTP, HTTPS allowed)."
+success "UFW configured (SSH, HTTP, HTTPS, panel ports allowed)."
 
 # ── PostgreSQL client ─────────────────────────────────────────────
 if command -v psql &>/dev/null; then
@@ -260,6 +262,7 @@ ExecStart=${NODE_BIN} .next/standalone/server.js
 Restart=on-failure
 RestartSec=5
 Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
 
 [Install]
 WantedBy=multi-user.target
