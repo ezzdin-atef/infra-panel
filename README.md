@@ -48,7 +48,7 @@ The installer handles all dependencies, builds the panel, and registers systemd 
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/your-org/infra-panel.git
+git clone https://github.com/ezzdin-atef/infra-panel
 cd infra-panel
 ```
 
