@@ -35,8 +35,6 @@ Backing services: **PostgreSQL 16**, **Redis 7** (BullMQ queues).
 
 ## Production Installation (Ubuntu)
 
-The installer handles all dependencies, builds the panel, and registers systemd services.
-
 ### Requirements
 
 - Ubuntu 20.04 or later
@@ -62,25 +60,59 @@ The installer will:
 
 - Install Docker (CE), Nginx, Certbot (snap), UFW, and PostgreSQL client
 - Create `/opt/infra-panel`, `/var/backups/infra-panel`, `/var/lib/infra-panel`
-- Generate a `/opt/infra-panel/.env` with random `JWT_SECRET`, DB password, and Redis password
+- Generate `/opt/infra-panel/.env` with random `JWT_SECRET`, DB password, and Redis password
 - Pre-configure UFW to allow ports 22, 80, and 443
 - Install Node.js (via nvm) and pnpm if not already present
-- Build the monorepo (`pnpm install && pnpm build`)
-- Register and start `infra-panel-api` and `infra-panel-web` as systemd services
-- Verify the API health endpoint and web UI
+- Build the monorepo and register `infra-panel-api` / `infra-panel-web` as systemd services
 
-**3. Run the database migration**
+**3. Review the generated `.env`**
+
+The installer writes `/opt/infra-panel/.env` with auto-generated credentials. Open it and note the `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, and `DATABASE_URL` values — they must be consistent with each other.
+
+```bash
+cat /opt/infra-panel/.env
+```
+
+Also add the three Postgres vars that Docker Compose needs (copy the values from `DATABASE_URL`):
+
+```bash
+# Append to /opt/infra-panel/.env
+POSTGRES_USER=infrapanel
+POSTGRES_PASSWORD=<generated-password>
+POSTGRES_DB=infrapanel
+```
+
+**4. Start the database**
 
 ```bash
 cd /opt/infra-panel
+docker compose up postgres redis -d
+
+# Wait until postgres is healthy
+docker compose ps postgres
+```
+
+**5. Apply the database schema**
+
+Run this once on a fresh install to create all tables:
+
+```bash
+cd /opt/infra-panel
+pnpm db:generate
 pnpm db:migrate
 ```
 
-**4. Open the setup wizard**
+**6. Start the panel services**
+
+```bash
+systemctl start infra-panel-api infra-panel-web
+```
+
+**7. Open the setup wizard**
 
 Navigate to `http://<your-server-ip>:3000/setup` and create your admin account.
 
-> The setup wizard is only available on the first launch. Once an admin exists it is permanently disabled.
+> The setup wizard is only available on the first launch. Once an admin account exists it is permanently disabled.
 
 ### Default ports
 
@@ -112,7 +144,7 @@ journalctl -u infra-panel-web  -n 100 -f
 
 - Node.js >= 20
 - pnpm >= 9
-- Docker (for PostgreSQL and Redis via Docker Compose)
+- Docker (for PostgreSQL and Redis)
 
 ### Steps
 
@@ -122,34 +154,13 @@ journalctl -u infra-panel-web  -n 100 -f
 pnpm install
 ```
 
-**2. Copy and configure environment variables**
+**2. Configure environment variables**
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` as needed. The defaults work with the Docker Compose services below.
-
-```env
-# Database
-DATABASE_URL=postgres://infra:infra@localhost:5432/infra_panel
-
-# Redis
-REDIS_URL=redis://localhost:6379
-
-# JWT (change in production — must be at least 32 characters)
-JWT_SECRET=change-me-in-production-at-least-32-chars
-JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
-
-# API
-API_PORT=3001
-API_HOST=0.0.0.0
-CORS_ORIGIN=http://localhost:3000
-
-# Web
-NEXT_PUBLIC_API_URL=http://localhost:3001
-```
+The defaults in `.env.example` match the Docker Compose services and require no changes for local development.
 
 **3. Start PostgreSQL and Redis**
 
@@ -159,20 +170,23 @@ docker compose up postgres redis -d
 
 **4. Apply the database schema**
 
+Run once after cloning, and again after any schema change:
+
 ```bash
-pnpm db:push
+pnpm db:generate
+pnpm db:migrate
 ```
 
-**5. Start all apps in development mode**
+**5. Start all apps**
 
 ```bash
 pnpm dev
 ```
 
 This starts:
-- `apps/api` on `http://localhost:3001` (tsx watch)
-- `apps/web` on `http://localhost:3000` (Next.js dev server)
-- `apps/worker` (BullMQ worker)
+- API at `http://localhost:3001` (Fastify, tsx watch)
+- Web at `http://localhost:3000` (Next.js dev server)
+- Worker (BullMQ)
 
 **6. Open the setup wizard**
 
@@ -184,8 +198,12 @@ Visit `http://localhost:3000/setup` to create the first admin account.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | — | PostgreSQL connection string |
+| `DATABASE_URL` | Yes | — | Full PostgreSQL connection string |
+| `POSTGRES_USER` | Yes | `infra` | PostgreSQL username (must match `DATABASE_URL`) |
+| `POSTGRES_PASSWORD` | Yes | `infra` | PostgreSQL password (must match `DATABASE_URL`) |
+| `POSTGRES_DB` | Yes | `infra_panel` | PostgreSQL database name (must match `DATABASE_URL`) |
 | `REDIS_URL` | Yes | — | Redis connection string |
+| `REDIS_PASSWORD` | No | — | Redis password (leave empty for no auth) |
 | `JWT_SECRET` | Yes | — | Secret for signing JWTs (min 32 chars) |
 | `JWT_ACCESS_EXPIRES_IN` | No | `15m` | Access token lifetime |
 | `JWT_REFRESH_EXPIRES_IN` | No | `7d` | Refresh token lifetime |
@@ -196,18 +214,23 @@ Visit `http://localhost:3000/setup` to create the first admin account.
 | `NGINX_SITES_DIR` | No | `/etc/nginx/sites-available/infra-panel` | Where Nginx config files are written |
 | `BACKUP_DIR` | No | `/var/backups/infra-panel` | Where pg_dump backup files are stored |
 
+> `DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` must all refer to the same credentials. Docker Compose uses the `POSTGRES_*` vars to initialize the container; the API uses `DATABASE_URL` to connect.
+
 ---
 
 ## Database Commands
 
 ```bash
-# Push schema changes (dev — no migration files)
-pnpm db:push
+# Generate SQL migration files from the current schema (run after schema changes)
+pnpm db:generate
 
-# Generate + apply a migration (production-safe)
+# Apply pending migrations to the database
 pnpm db:migrate
 
-# Open Drizzle Studio (GUI for the database)
+# Push schema directly without migration files (dev only — skips migration history)
+pnpm db:push
+
+# Open Drizzle Studio (browser GUI for the database)
 pnpm db:studio
 ```
 
@@ -215,17 +238,16 @@ pnpm db:studio
 
 ## Running Tests
 
-Unit tests use Node's built-in `node:test` runner — no extra packages required.
+Unit tests use Node's built-in `node:test` runner.
 
 ```bash
-# Run API unit tests
 cd apps/api
 pnpm test
 ```
 
 Tests cover: AES-256-GCM crypto roundtrip, backup schedule computation, UFW SSH port detection, and audit error-swallowing behavior.
 
-End-to-end tests use Playwright (`apps/web/e2e/`):
+End-to-end tests use Playwright:
 
 ```bash
 cd apps/web
@@ -246,12 +268,20 @@ Outputs:
 
 ---
 
-## Docker Compose (full stack)
+## Full Docker Compose Stack
 
-To run the entire stack in containers (including api, worker, and web):
+To run everything — including the API, worker, and web — in containers:
 
 ```bash
+cp .env.example .env   # configure credentials first
 docker compose up --build
+```
+
+Then apply migrations once the postgres container is healthy:
+
+```bash
+pnpm db:generate
+pnpm db:migrate
 ```
 
 The compose file mounts `/var/run/docker.sock` into `api` and `worker` so they can manage host Docker resources.
@@ -260,21 +290,35 @@ The compose file mounts `/var/run/docker.sock` into `api` and `worker` so they c
 
 ## Troubleshooting
 
+**`pnpm db:migrate` fails with "password authentication failed"**
+
+The `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` vars in `.env` must match the credentials in `DATABASE_URL`. If the postgres container was already created with different credentials, tear it down and recreate it:
+
+```bash
+docker compose down postgres
+docker volume rm infra-panel_postgres_data
+docker compose up postgres -d
+pnpm db:generate
+pnpm db:migrate
+```
+
+**`pnpm db:migrate` fails with "Can't find meta/_journal.json"**
+
+Migration files haven't been generated yet. Run `pnpm db:generate` first, then `pnpm db:migrate`.
+
 **API health check fails after install**
 
 ```bash
 journalctl -u infra-panel-api -n 50
 ```
 
-Common causes: missing `.env`, database not migrated, port 3001 blocked.
+Common causes: postgres container not running, `.env` missing or misconfigured, port 3001 blocked by UFW.
 
 **Nginx reload errors**
 
-The panel runs `nginx -t` before applying any config. If validation fails the old config is automatically restored. Check `GET /api/domains/nginx/health` for the nginx version.
+The panel runs `nginx -t` before applying any config change. If validation fails the previous config is automatically restored. Check `GET /api/domains/nginx/health` for the nginx status.
 
 **Certbot not found**
-
-Install certbot manually:
 
 ```bash
 sudo snap install --classic certbot
@@ -283,4 +327,8 @@ sudo ln -s /snap/bin/certbot /usr/bin/certbot
 
 **UFW rules not applying**
 
-Ensure UFW is enabled: `sudo ufw status`. The panel rejects deny rules for port 22 to prevent SSH lockout.
+```bash
+sudo ufw status
+```
+
+The panel rejects deny rules for port 22 to prevent SSH lockout.

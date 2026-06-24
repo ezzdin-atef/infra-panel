@@ -73,7 +73,6 @@ else
   success "Nginx installed: $(nginx -v 2>&1)"
 fi
 
-# Create infra-panel nginx sites dir
 NGINX_SITES_DIR="/etc/nginx/sites-available/infra-panel"
 mkdir -p "$NGINX_SITES_DIR"
 
@@ -84,20 +83,18 @@ else
   info "Installing Certbot..."
   apt-get install -y -qq snapd
   snap install --classic certbot 2>/dev/null || apt-get install -y -qq certbot python3-certbot-nginx
+  ln -sf /snap/bin/certbot /usr/bin/certbot 2>/dev/null || true
   success "Certbot installed: $(certbot --version)"
 fi
 
 # ── UFW ───────────────────────────────────────────────────────────
-if command -v ufw &>/dev/null; then
-  success "UFW already installed."
-else
+if ! command -v ufw &>/dev/null; then
   info "Installing UFW..."
   apt-get install -y -qq ufw
 fi
 
-# Ensure SSH is allowed before enabling UFW
-ufw allow 22/tcp 2>/dev/null || true
-ufw allow 80/tcp 2>/dev/null || true
+ufw allow 22/tcp  2>/dev/null || true
+ufw allow 80/tcp  2>/dev/null || true
 ufw allow 443/tcp 2>/dev/null || true
 ufw --force enable 2>/dev/null || true
 success "UFW configured (SSH, HTTP, HTTPS allowed)."
@@ -116,11 +113,18 @@ ENV_FILE="$INSTALL_DIR/.env"
 
 if [[ -f "$ENV_FILE" ]]; then
   warn ".env already exists at $ENV_FILE -- skipping generation."
+  # Read existing DB creds so Docker Compose vars stay consistent
+  DB_USER=$(grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2 || echo "infrapanel")
+  DB_PASSWORD=$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d= -f2 || openssl rand -hex 16)
+  DB_NAME=$(grep '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2 || echo "infrapanel")
+  REDIS_PASSWORD=$(grep '^REDIS_PASSWORD=' "$ENV_FILE" | cut -d= -f2 || openssl rand -hex 16)
 else
   info "Generating .env file..."
 
   JWT_SECRET=$(openssl rand -hex 32)
   DB_PASSWORD=$(openssl rand -hex 16)
+  DB_USER="infrapanel"
+  DB_NAME="infrapanel"
   REDIS_PASSWORD=$(openssl rand -hex 16)
 
   cat > "$ENV_FILE" <<EOF
@@ -128,9 +132,13 @@ else
 NODE_ENV=production
 
 # Database
-DATABASE_URL=postgres://infrapanel:${DB_PASSWORD}@localhost:5432/infrapanel
+POSTGRES_USER=${DB_USER}
+POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_DB=${DB_NAME}
+DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}
 
 # Redis
+REDIS_PASSWORD=${REDIS_PASSWORD}
 REDIS_URL=redis://:${REDIS_PASSWORD}@localhost:6379
 
 # Auth
@@ -140,6 +148,7 @@ JWT_REFRESH_EXPIRES_IN=7d
 
 # API
 API_PORT=3001
+API_HOST=0.0.0.0
 CORS_ORIGIN=http://localhost:3000
 
 # Web
@@ -160,16 +169,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 rsync -a --exclude=node_modules --exclude=.git --exclude='*.log' \
-  "$REPO_ROOT/" "$INSTALL_DIR/" 2>/dev/null || {
-  cp -r "$REPO_ROOT/." "$INSTALL_DIR/"
-}
+  "$REPO_ROOT/" "$INSTALL_DIR/" 2>/dev/null || cp -r "$REPO_ROOT/." "$INSTALL_DIR/"
+
+# Ensure the generated .env is in place after copy
 cp "$ENV_FILE" "$INSTALL_DIR/.env"
+chmod 600 "$INSTALL_DIR/.env"
 success "Files copied."
 
-# ── Install Node.js (if needed) ───────────────────────────────────
+# ── Install Node.js + pnpm ────────────────────────────────────────
+export NVM_DIR="$HOME/.nvm"
+
 if ! command -v node &>/dev/null || ! command -v pnpm &>/dev/null; then
   info "Installing Node.js via nvm..."
-  export NVM_DIR="$HOME/.nvm"
   if [[ ! -d "$NVM_DIR" ]]; then
     curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
   fi
@@ -180,18 +191,52 @@ if ! command -v node &>/dev/null || ! command -v pnpm &>/dev/null; then
   npm install -g pnpm
   success "Node $(node -v) and pnpm $(pnpm -v) installed."
 else
+  # nvm node may not be on PATH when running as root via sudo; source if available
+  [[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh" || true
   success "Node $(node -v) and pnpm $(pnpm -v) already installed."
 fi
 
-# ── Build panel ───────────────────────────────────────────────────
-info "Installing dependencies..."
+NODE_BIN="$(command -v node)"
+info "Using node at: $NODE_BIN"
+
+# ── Install dependencies + build ──────────────────────────────────
 cd "$INSTALL_DIR"
-pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+
+info "Installing dependencies..."
+pnpm install
 
 info "Building panel..."
 pnpm build
 
 success "Panel built."
+
+# ── Start database containers ─────────────────────────────────────
+info "Starting PostgreSQL and Redis containers..."
+docker compose --env-file "$ENV_FILE" up postgres redis -d
+
+info "Waiting for PostgreSQL to be healthy..."
+for i in $(seq 1 30); do
+  if docker compose ps postgres 2>/dev/null | grep -q "healthy"; then
+    success "PostgreSQL is healthy."
+    break
+  fi
+  if [[ $i -eq 30 ]]; then
+    error "PostgreSQL did not become healthy in time. Check: docker compose logs postgres"
+  fi
+  sleep 2
+done
+
+# ── Run database migrations ───────────────────────────────────────
+info "Generating and applying database migrations..."
+# Load env so drizzle-kit can reach the DB
+set -a; source "$ENV_FILE"; set +a
+
+cd "$INSTALL_DIR/packages/database"
+pnpm db:generate
+pnpm db:migrate
+cd "$INSTALL_DIR"
+
+success "Database migrations applied."
 
 # ── Systemd services ──────────────────────────────────────────────
 info "Installing systemd services..."
@@ -199,14 +244,15 @@ info "Installing systemd services..."
 cat > /etc/systemd/system/infra-panel-api.service <<UNIT
 [Unit]
 Description=infra-panel API server
-After=network.target
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}/apps/api
 EnvironmentFile=${ENV_FILE}
-ExecStart=/usr/bin/node dist/index.js
+ExecStart=${NODE_BIN} dist/index.js
 Restart=on-failure
 RestartSec=5
 
@@ -224,7 +270,7 @@ Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}/apps/web
 EnvironmentFile=${ENV_FILE}
-ExecStart=/usr/bin/node .next/standalone/server.js
+ExecStart=${NODE_BIN} .next/standalone/server.js
 Restart=on-failure
 RestartSec=5
 Environment=PORT=3000
@@ -235,14 +281,12 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable infra-panel-api infra-panel-web
-systemctl start infra-panel-api infra-panel-web || warn "Services enabled but not yet started (may need DB migration first)."
-
-success "Systemd services installed."
+systemctl start infra-panel-api infra-panel-web
+success "Systemd services installed and started."
 
 # ── Verification ──────────────────────────────────────────────────
 info "Verifying services..."
-
-sleep 3
+sleep 5
 
 if curl -sf http://localhost:3001/api/health &>/dev/null; then
   success "API is reachable at http://localhost:3001"
