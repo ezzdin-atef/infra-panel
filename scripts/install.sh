@@ -258,7 +258,7 @@ Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}/apps/web
 EnvironmentFile=${ENV_FILE}
-ExecStart=${NODE_BIN} .next/standalone/server.js
+ExecStart=${NODE_BIN} .next/standalone/apps/web/server.js
 Restart=on-failure
 RestartSec=5
 Environment=PORT=3000
