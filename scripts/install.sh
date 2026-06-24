@@ -222,6 +222,9 @@ cd "$INSTALL_DIR"
 info "Installing dependencies..."
 pnpm install
 
+# Export env vars so Next.js bakes NEXT_PUBLIC_* into the browser bundle at build time
+set -a; source "$ENV_FILE"; set +a
+
 info "Building panel..."
 pnpm build
 
