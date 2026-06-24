@@ -183,22 +183,32 @@ fi
 # ── Install Node.js + pnpm ────────────────────────────────────────
 export NVM_DIR="$HOME/.nvm"
 
-if ! command -v node &>/dev/null || ! command -v pnpm &>/dev/null; then
-  info "Installing Node.js via nvm..."
-  if [[ ! -d "$NVM_DIR" ]]; then
-    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-  fi
-  # shellcheck source=/dev/null
-  source "$NVM_DIR/nvm.sh"
-  nvm install --lts
-  nvm use --lts
-  npm install -g pnpm
-  success "Node $(node -v) and pnpm $(pnpm -v) installed."
-else
-  # nvm node may not be on PATH when running as root via sudo; source if available
-  [[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh" || true
-  success "Node $(node -v) and pnpm $(pnpm -v) already installed."
+# nvm uses unbound variables internally -- must disable -u around all nvm calls
+set +u
+
+if [[ ! -d "$NVM_DIR" ]]; then
+  info "Installing nvm..."
+  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 fi
+
+# shellcheck source=/dev/null
+source "$NVM_DIR/nvm.sh"
+
+if ! command -v node &>/dev/null; then
+  info "Installing Node.js LTS..."
+  nvm install --lts
+fi
+
+nvm use --lts
+
+if ! command -v pnpm &>/dev/null; then
+  info "Installing pnpm..."
+  npm install -g pnpm
+fi
+
+set -u
+
+success "Node $(node -v) and pnpm $(pnpm -v) ready."
 
 NODE_BIN="$(command -v node)"
 info "Using node at: $NODE_BIN"
