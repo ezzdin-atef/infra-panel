@@ -11,8 +11,7 @@
   "dependencies": {
     "@repo/config": "workspace:*",
     "@repo/database": "workspace:*",
-    "bullmq": "^5",
-    "ioredis": "^5"
+    "bullmq": "^5"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
