@@ -1,0 +1,20 @@
+{
+  "name": "@repo/server-actions",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./auth": "./src/auth.ts"
+  },
+  "dependencies": {
+    "@repo/types": "workspace:*",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "typescript": "^5"
+  },
+  "peerDependencies": {
+    "next": "^15"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@repo/api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "test": "tsx --test --test-reporter=spec src/lib/crypto.test.ts src/services/backup.test.ts src/services/ufw.test.ts src/services/audit.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^10",
+    "@fastify/cors": "^10",
+    "@fastify/rate-limit": "^10",
+    "@repo/config": "workspace:*",
+    "@repo/database": "workspace:*",
+    "@repo/shared": "workspace:*",
+    "@repo/types": "workspace:*",
+    "dockerode": "^4",
+    "drizzle-orm": "^0.36",
+    "fastify": "^5",
+    "systeminformation": "^5",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/dockerode": "^3",
+    "eslint": "^9",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}

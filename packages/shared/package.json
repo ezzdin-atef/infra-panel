@@ -1,0 +1,21 @@
+{
+  "name": "@repo/shared",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./crypto": "./src/crypto.ts",
+    "./jwt": "./src/jwt.ts"
+  },
+  "dependencies": {
+    "@repo/types": "workspace:*",
+    "bcryptjs": "^2",
+    "jsonwebtoken": "^9"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/bcryptjs": "^2",
+    "@types/jsonwebtoken": "^9",
+    "typescript": "^5"
+  }
+}
