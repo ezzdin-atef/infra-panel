@@ -17,6 +17,9 @@
     "type-check": {
       "dependsOn": ["^type-check"]
     },
+    "db:generate": {
+      "cache": false
+    },
     "db:push": {
       "cache": false
     },
