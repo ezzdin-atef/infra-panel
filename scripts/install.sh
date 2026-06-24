@@ -169,10 +169,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 if [[ "$(realpath "$REPO_ROOT")" != "$(realpath "$INSTALL_DIR")" ]]; then
-  rsync -a --exclude=node_modules --exclude=.git --exclude='*.log' \
-    "$REPO_ROOT/" "$INSTALL_DIR/" 2>/dev/null || cp -r "$REPO_ROOT/." "$INSTALL_DIR/"
-  cp "$ENV_FILE" "$INSTALL_DIR/.env"
-  chmod 600 "$INSTALL_DIR/.env"
+  # Exclude .env so the generated file is never overwritten by the repo copy
+  rsync -a --exclude=node_modules --exclude=.git --exclude='*.log' --exclude='.env' \
+    "$REPO_ROOT/" "$INSTALL_DIR/" 2>/dev/null || {
+      cp -r "$REPO_ROOT/." "$INSTALL_DIR/"
+      rm -f "$INSTALL_DIR/.env"
+    }
   success "Files copied."
 else
   success "Running in-place at $INSTALL_DIR -- skipping file copy."
